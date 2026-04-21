@@ -21,7 +21,8 @@ static void handle_signal(int sig) {
 #define BUFSIZE 4096
 
 static void log_request(const char *ip, const char *tcp_ip,
-                        const char *xff, const char *xri, int status) {
+                        const char *xff, const char *xri,
+                        const char *path, int status) {
     time_t now = time(NULL);
     char ts[32];
     strftime(ts, sizeof(ts), "%Y-%m-%dT%H:%M:%SZ", gmtime(&now));
@@ -32,9 +33,10 @@ static void log_request(const char *ip, const char *tcp_ip,
 
     fprintf(stderr,
         "{\"time\":\"%s\",\"ip\":\"%s\",\"tcp_ip\":\"%s\""
+        ",\"path\":\"%s\""
         "%s%s%s%s%s%s"
         ",\"status\":%d}\n",
-        ts, ip, tcp_ip,
+        ts, ip, tcp_ip, path,
         xff ? ",\"x_forwarded_for\":\"" : "", xff ? xff_buf : "", xff ? "\"" : "",
         xri ? ",\"x_real_ip\":\""       : "", xri ? xri_buf : "", xri ? "\"" : "",
         status);
@@ -77,6 +79,9 @@ static void handle_client(int client_fd, const char *tcp_ip, const char *api_key
     }
     buf[n] = '\0';
 
+    char path[1024] = "-";
+    sscanf(buf, "%*s %1023s", path);
+
     const char *forwarded = find_header(buf, "X-Forwarded-For");
     const char *real_ip   = find_header(buf, "X-Real-IP");
 
@@ -86,7 +91,7 @@ static void handle_client(int client_fd, const char *tcp_ip, const char *api_key
          * $proxy_add_x_forwarded_for so it cannot be spoofed by the client. */
         const char *last = forwarded;
         const char *p = forwarded;
-        while ((p = strchr(p, ',')) != NULL) {
+        while ((p = strpbrk(p, ",\r\n")) != NULL && *p == ',') {
             p++;
             while (*p == ' ') p++;
             if (*p && *p != '\r' && *p != '\n')
@@ -102,19 +107,25 @@ static void handle_client(int client_fd, const char *tcp_ip, const char *api_key
     char *end = ip + strlen(ip) - 1;
     while (end > ip && (*end == ' ' || *end == '\t')) *end-- = '\0';
 
+    if (strcmp(path, "/") != 0) {
+        log_request(ip, tcp_ip, forwarded, real_ip, path, 401);
+        send_status(client_fd, 401, "Unauthorized");
+        return;
+    }
+
     if (api_key) {
         const char *provided = find_header(buf, "X-API-Key");
         char key[256] = {0};
         if (provided)
             sscanf(provided, "%255[^\r\n]", key);
         if (!provided || strcmp(key, api_key) != 0) {
-            log_request(ip, tcp_ip, forwarded, real_ip, 401);
+            log_request(ip, tcp_ip, forwarded, real_ip, path, 401);
             send_status(client_fd, 401, "Unauthorized");
             return;
         }
     }
 
-    log_request(ip, tcp_ip, forwarded, real_ip, 200);
+    log_request(ip, tcp_ip, forwarded, real_ip, path, 200);
     send_status(client_fd, 200, ip);
 }
 
