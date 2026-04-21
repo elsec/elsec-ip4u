@@ -20,11 +20,24 @@ static void handle_signal(int sig) {
 #define PORT 8080
 #define BUFSIZE 4096
 
-static void log_request(const char *ip, int status) {
+static void log_request(const char *ip, const char *tcp_ip,
+                        const char *xff, const char *xri, int status) {
     time_t now = time(NULL);
     char ts[32];
     strftime(ts, sizeof(ts), "%Y-%m-%dT%H:%M:%SZ", gmtime(&now));
-    fprintf(stderr, "{\"time\":\"%s\",\"ip\":\"%s\",\"status\":%d}\n", ts, ip, status);
+
+    char xff_buf[256] = "", xri_buf[128] = "";
+    if (xff) sscanf(xff, "%255[^\r\n]", xff_buf);
+    if (xri) sscanf(xri, "%127[^\r\n]", xri_buf);
+
+    fprintf(stderr,
+        "{\"time\":\"%s\",\"ip\":\"%s\",\"tcp_ip\":\"%s\""
+        "%s%s%s%s%s%s"
+        ",\"status\":%d}\n",
+        ts, ip, tcp_ip,
+        xff ? ",\"x_forwarded_for\":\"" : "", xff ? xff_buf : "", xff ? "\"" : "",
+        xri ? ",\"x_real_ip\":\""       : "", xri ? xri_buf : "", xri ? "\"" : "",
+        status);
 }
 
 static const char *find_header(const char *buf, const char *name) {
@@ -64,38 +77,34 @@ static void handle_client(int client_fd, const char *tcp_ip, const char *api_key
     }
     buf[n] = '\0';
 
+    const char *forwarded = find_header(buf, "X-Forwarded-For");
+    const char *real_ip   = find_header(buf, "X-Real-IP");
+
+    char ip[128];
+    if (real_ip) {
+        sscanf(real_ip, "%127[^\r\n]", ip);
+    } else if (forwarded) {
+        sscanf(forwarded, "%127[^,\r\n]", ip);
+    } else {
+        snprintf(ip, sizeof(ip), "%s", tcp_ip);
+    }
+
+    char *end = ip + strlen(ip) - 1;
+    while (end > ip && (*end == ' ' || *end == '\t')) *end-- = '\0';
+
     if (api_key) {
         const char *provided = find_header(buf, "X-API-Key");
         char key[256] = {0};
         if (provided)
             sscanf(provided, "%255[^\r\n]", key);
         if (!provided || strcmp(key, api_key) != 0) {
-            log_request(tcp_ip, 401);
+            log_request(ip, tcp_ip, forwarded, real_ip, 401);
             send_status(client_fd, 401, "Unauthorized");
             return;
         }
     }
 
-    /* Prefer proxy headers; fall back to TCP peer address. */
-    const char *forwarded = find_header(buf, "X-Forwarded-For");
-    const char *real_ip   = find_header(buf, "X-Real-IP");
-
-    char ip[128];
-    if (real_ip) {
-        /* X-Real-IP is a single IP */
-        sscanf(real_ip, "%127[^\r\n]", ip);
-    } else if (forwarded) {
-        /* X-Forwarded-For may be a comma-separated list; first entry is the client */
-        sscanf(forwarded, "%127[^,\r\n]", ip);
-    } else {
-        snprintf(ip, sizeof(ip), "%s", tcp_ip);
-    }
-
-    /* Strip any trailing whitespace */
-    char *end = ip + strlen(ip) - 1;
-    while (end > ip && (*end == ' ' || *end == '\t')) *end-- = '\0';
-
-    log_request(ip, 200);
+    log_request(ip, tcp_ip, forwarded, real_ip, 200);
     send_status(client_fd, 200, ip);
 }
 
