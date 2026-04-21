@@ -81,10 +81,10 @@ static void handle_client(int client_fd, const char *tcp_ip, const char *api_key
     const char *real_ip   = find_header(buf, "X-Real-IP");
 
     char ip[128];
-    if (real_ip) {
-        sscanf(real_ip, "%127[^\r\n]", ip);
-    } else if (forwarded) {
+    if (forwarded) {
         sscanf(forwarded, "%127[^,\r\n]", ip);
+    } else if (real_ip) {
+        sscanf(real_ip, "%127[^\r\n]", ip);
     } else {
         snprintf(ip, sizeof(ip), "%s", tcp_ip);
     }
