@@ -5,6 +5,16 @@
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <signal.h>
+
+static volatile int server_fd = -1;
+
+static void handle_signal(int sig) {
+    (void)sig;
+    if (server_fd != -1)
+        close(server_fd);
+    _exit(0);
+}
 
 #define PORT 8080
 #define BUFSIZE 4096
@@ -84,7 +94,12 @@ int main(void) {
     if (!api_key)
         fprintf(stderr, "Warning: API_KEY not set, running without authentication\n");
 
-    int server_fd = socket(AF_INET, SOCK_STREAM, 0);
+    struct sigaction sa = { .sa_handler = handle_signal };
+    sigemptyset(&sa.sa_mask);
+    sigaction(SIGINT,  &sa, NULL);
+    sigaction(SIGTERM, &sa, NULL);
+
+    server_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (server_fd < 0) {
         perror("socket");
         return 1;
@@ -117,7 +132,7 @@ int main(void) {
         int client_fd = accept(server_fd, (struct sockaddr *)&client_addr, &client_len);
         if (client_fd < 0) {
             perror("accept");
-            continue;
+            break;
         }
 
         char client_ip[INET_ADDRSTRLEN];
