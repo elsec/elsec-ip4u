@@ -87,17 +87,7 @@ static void handle_client(int client_fd, const char *tcp_ip, const char *api_key
 
     char ip[128];
     if (forwarded) {
-        /* Take the last entry — nginx appends the real peer IP via
-         * $proxy_add_x_forwarded_for so it cannot be spoofed by the client. */
-        const char *last = forwarded;
-        const char *p = forwarded;
-        while ((p = strpbrk(p, ",\r\n")) != NULL && *p == ',') {
-            p++;
-            while (*p == ' ') p++;
-            if (*p && *p != '\r' && *p != '\n')
-                last = p;
-        }
-        sscanf(last, "%127[^,\r\n ]", ip);
+        sscanf(forwarded, "%127[^,\r\n ]", ip);
     } else if (real_ip) {
         sscanf(real_ip, "%127[^\r\n]", ip);
     } else {
