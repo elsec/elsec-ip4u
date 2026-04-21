@@ -6,6 +6,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <signal.h>
+#include <time.h>
 
 static volatile int server_fd = -1;
 
@@ -18,6 +19,13 @@ static void handle_signal(int sig) {
 
 #define PORT 8080
 #define BUFSIZE 4096
+
+static void log_request(const char *ip, int status) {
+    time_t now = time(NULL);
+    char ts[32];
+    strftime(ts, sizeof(ts), "%Y-%m-%dT%H:%M:%SZ", gmtime(&now));
+    fprintf(stderr, "{\"time\":\"%s\",\"ip\":\"%s\",\"status\":%d}\n", ts, ip, status);
+}
 
 static const char *find_header(const char *buf, const char *name) {
     const char *p = buf;
@@ -62,6 +70,7 @@ static void handle_client(int client_fd, const char *tcp_ip, const char *api_key
         if (provided)
             sscanf(provided, "%255[^\r\n]", key);
         if (!provided || strcmp(key, api_key) != 0) {
+            log_request(tcp_ip, 401);
             send_status(client_fd, 401, "Unauthorized");
             return;
         }
@@ -86,6 +95,7 @@ static void handle_client(int client_fd, const char *tcp_ip, const char *api_key
     char *end = ip + strlen(ip) - 1;
     while (end > ip && (*end == ' ' || *end == '\t')) *end-- = '\0';
 
+    log_request(ip, 200);
     send_status(client_fd, 200, ip);
 }
 
