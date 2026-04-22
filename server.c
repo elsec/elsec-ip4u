@@ -20,6 +20,15 @@ static void handle_signal(int sig) {
 #define PORT 8080
 #define BUFSIZE 4096
 
+static void json_escape(const char *src, char *dst, size_t dst_size) {
+    size_t j = 0;
+    for (size_t i = 0; src[i] && j + 2 < dst_size; i++) {
+        if (src[i] == '"' || src[i] == '\\') dst[j++] = '\\';
+        dst[j++] = src[i];
+    }
+    dst[j] = '\0';
+}
+
 static void log_request(const char *ip, const char *tcp_ip,
                         const char *xff, const char *xri,
                         const char *path, int status) {
@@ -27,18 +36,25 @@ static void log_request(const char *ip, const char *tcp_ip,
     char ts[32];
     strftime(ts, sizeof(ts), "%Y-%m-%dT%H:%M:%SZ", gmtime(&now));
 
-    char xff_buf[256] = "", xri_buf[128] = "";
-    if (xff) sscanf(xff, "%255[^\r\n]", xff_buf);
-    if (xri) sscanf(xri, "%127[^\r\n]", xri_buf);
+    char xff_raw[256] = "", xri_raw[128] = "";
+    if (xff) sscanf(xff, "%255[^\r\n]", xff_raw);
+    if (xri) sscanf(xri, "%127[^\r\n]", xri_raw);
+
+    char ip_e[256], tcp_e[256], path_e[2048], xff_e[512], xri_e[256];
+    json_escape(ip,      ip_e,   sizeof(ip_e));
+    json_escape(tcp_ip,  tcp_e,  sizeof(tcp_e));
+    json_escape(path,    path_e, sizeof(path_e));
+    json_escape(xff_raw, xff_e,  sizeof(xff_e));
+    json_escape(xri_raw, xri_e,  sizeof(xri_e));
 
     fprintf(stdout,
         "{\"time\":\"%s\",\"ip\":\"%s\",\"tcp_ip\":\"%s\""
         ",\"path\":\"%s\""
         "%s%s%s%s%s%s"
         ",\"status\":%d}\n",
-        ts, ip, tcp_ip, path,
-        xff ? ",\"x_forwarded_for\":\"" : "", xff ? xff_buf : "", xff ? "\"" : "",
-        xri ? ",\"x_real_ip\":\""       : "", xri ? xri_buf : "", xri ? "\"" : "",
+        ts, ip_e, tcp_e, path_e,
+        xff ? ",\"x_forwarded_for\":\"" : "", xff ? xff_e : "", xff ? "\"" : "",
+        xri ? ",\"x_real_ip\":\""       : "", xri ? xri_e : "", xri ? "\"" : "",
         status);
 }
 
