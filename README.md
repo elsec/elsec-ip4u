@@ -74,7 +74,7 @@ Optional fields (`x_forwarded_for`, `x_real_ip`, `client_id`, `cf_country`) are 
 
 ## Container
 
-Examples use `podman` but `docker` works as a drop-in replacement for all commands.
+Image available at [ghcr.io/elsec/elsec-ip4u](https://github.com/elsec/elsec-ip4u/pkgs/container/elsec-ip4u). Examples use `podman` but `docker` works as a drop-in replacement for all commands.
 
 ```sh
 # without Cloudflare
