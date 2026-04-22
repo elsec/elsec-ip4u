@@ -1,6 +1,6 @@
 # ip4u
 
-A minimal HTTP server that returns the client's IP address as plain text. Self-host it instead of relying on third-party services like `ifconfig.me`, `ipinfo.io`, or `checkip.amazonaws.com` — your IP lookups stay private and under your control.
+A minimal HTTP server that returns the client's IP address as plain text. Listens on port 8080 by default. Self-host it instead of relying on third-party services like `ifconfig.me`, `ipinfo.io`, or `checkip.amazonaws.com` — your IP lookups stay private and under your control.
 
 ## Build
 
