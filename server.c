@@ -7,6 +7,7 @@
 #include <netinet/in.h>
 #include <signal.h>
 #include <time.h>
+#include <pthread.h>
 
 static volatile int server_fd = -1;
 
@@ -68,6 +69,21 @@ static void send_status(int fd, int code, const char *text) {
         code, text, strlen(text) + 1, text);
     send(fd, buf, len, 0);
     close(fd);
+}
+
+static void handle_client(int client_fd, const char *tcp_ip, const char *api_key);
+
+typedef struct {
+    int fd;
+    char ip[INET_ADDRSTRLEN];
+    const char *api_key;
+} client_args_t;
+
+static void *thread_handle_client(void *arg) {
+    client_args_t *a = arg;
+    handle_client(a->fd, a->ip, a->api_key);
+    free(a);
+    return NULL;
 }
 
 static void handle_client(int client_fd, const char *tcp_ip, const char *api_key) {
@@ -168,7 +184,20 @@ int main(void) {
         char client_ip[INET_ADDRSTRLEN];
         inet_ntop(AF_INET, &client_addr.sin_addr, client_ip, sizeof(client_ip));
 
-        handle_client(client_fd, client_ip, api_key);
+        client_args_t *args = malloc(sizeof(*args));
+        if (!args) { close(client_fd); continue; }
+        args->fd = client_fd;
+        memcpy(args->ip, client_ip, sizeof(client_ip));
+        args->api_key = api_key;
+
+        pthread_t tid;
+        if (pthread_create(&tid, NULL, thread_handle_client, args) != 0) {
+            perror("pthread_create");
+            close(client_fd);
+            free(args);
+        } else {
+            pthread_detach(tid);
+        }
     }
 
     close(server_fd);
