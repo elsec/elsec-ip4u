@@ -63,5 +63,12 @@ Each request is logged to stdout as a JSON object:
 
 ```sh
 podman build -f Containerfile -t ip4u .
-podman run -e API_KEY=your-secret-here -p 8080:8080 ip4u
+podman run -e SECRET_KEY=your-master-secret -p 8080:8080 ip4u
+```
+
+To issue a client key from the container:
+
+```sh
+podman run --rm -e SECRET_KEY=your-master-secret ip4u ./keygen alice
+# → alice:33201d28...
 ```
