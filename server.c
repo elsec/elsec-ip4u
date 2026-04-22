@@ -7,6 +7,9 @@
 #include <netinet/in.h>
 #include <signal.h>
 #include <time.h>
+#include <openssl/hmac.h>
+#include <openssl/evp.h>
+#include <openssl/crypto.h>
 
 static volatile int server_fd = -1;
 
@@ -31,7 +34,7 @@ static void json_escape(const char *src, char *dst, size_t dst_size) {
 
 static void log_request(const char *ip, const char *tcp_ip,
                         const char *xff, const char *xri,
-                        const char *path, int status) {
+                        const char *path, const char *client_id, int status) {
     time_t now = time(NULL);
     char ts[32];
     strftime(ts, sizeof(ts), "%Y-%m-%dT%H:%M:%SZ", gmtime(&now));
@@ -40,21 +43,24 @@ static void log_request(const char *ip, const char *tcp_ip,
     if (xff) sscanf(xff, "%255[^\r\n]", xff_raw);
     if (xri) sscanf(xri, "%127[^\r\n]", xri_raw);
 
-    char ip_e[256], tcp_e[256], path_e[2048], xff_e[512], xri_e[256];
-    json_escape(ip,      ip_e,   sizeof(ip_e));
-    json_escape(tcp_ip,  tcp_e,  sizeof(tcp_e));
-    json_escape(path,    path_e, sizeof(path_e));
-    json_escape(xff_raw, xff_e,  sizeof(xff_e));
-    json_escape(xri_raw, xri_e,  sizeof(xri_e));
+    char ip_e[256], tcp_e[256], path_e[2048], xff_e[512], xri_e[256], cid_e[256];
+    json_escape(ip,        ip_e,   sizeof(ip_e));
+    json_escape(tcp_ip,    tcp_e,  sizeof(tcp_e));
+    json_escape(path,      path_e, sizeof(path_e));
+    json_escape(xff_raw,   xff_e,  sizeof(xff_e));
+    json_escape(xri_raw,   xri_e,  sizeof(xri_e));
+    json_escape(client_id ? client_id : "", cid_e, sizeof(cid_e));
 
     fprintf(stdout,
         "{\"time\":\"%s\",\"ip\":\"%s\",\"tcp_ip\":\"%s\""
         ",\"path\":\"%s\""
         "%s%s%s%s%s%s"
+        "%s%s%s"
         ",\"status\":%d}\n",
         ts, ip_e, tcp_e, path_e,
         xff ? ",\"x_forwarded_for\":\"" : "", xff ? xff_e : "", xff ? "\"" : "",
         xri ? ",\"x_real_ip\":\""       : "", xri ? xri_e : "", xri ? "\"" : "",
+        client_id ? ",\"client_id\":\"" : "", client_id ? cid_e : "", client_id ? "\"" : "",
         status);
 }
 
@@ -86,7 +92,7 @@ static void send_status(int fd, int code, const char *text) {
     close(fd);
 }
 
-static void handle_client(int client_fd, const char *tcp_ip, const char *api_key) {
+static void handle_client(int client_fd, const char *tcp_ip, const char *secret_key) {
     char buf[BUFSIZE];
     ssize_t n = recv(client_fd, buf, sizeof(buf) - 1, 0);
     if (n <= 0) {
@@ -114,31 +120,56 @@ static void handle_client(int client_fd, const char *tcp_ip, const char *api_key
     while (end > ip && (*end == ' ' || *end == '\t')) *end-- = '\0';
 
     if (strcmp(path, "/") != 0) {
-        log_request(ip, tcp_ip, forwarded, real_ip, path, 401);
+        log_request(ip, tcp_ip, forwarded, real_ip, path, NULL, 401);
         send_status(client_fd, 401, "Unauthorized");
         return;
     }
 
-    if (api_key) {
+    char key_buf[512] = {0};
+    char *client_id = NULL;
+    if (secret_key) {
         const char *provided = find_header(buf, "X-API-Key");
-        char key[256] = {0};
         if (provided)
-            sscanf(provided, "%255[^\r\n]", key);
-        if (!provided || strcmp(key, api_key) != 0) {
-            log_request(ip, tcp_ip, forwarded, real_ip, path, 401);
+            sscanf(provided, "%511[^\r\n]", key_buf);
+
+        char *colon = strchr(key_buf, ':');
+        if (!colon) {
+            log_request(ip, tcp_ip, forwarded, real_ip, path, NULL, 401);
+            send_status(client_fd, 401, "Unauthorized");
+            return;
+        }
+        *colon = '\0';
+        client_id = key_buf;
+        const char *provided_hmac = colon + 1;
+
+        unsigned char digest[32];
+        unsigned int digest_len = sizeof(digest);
+        HMAC(EVP_sha256(),
+             secret_key, (int)strlen(secret_key),
+             (unsigned char *)client_id, strlen(client_id),
+             digest, &digest_len);
+
+        char computed_hex[65];
+        for (int i = 0; i < 32; i++)
+            sprintf(computed_hex + i * 2, "%02x", digest[i]);
+        computed_hex[64] = '\0';
+
+        if (strlen(provided_hmac) != 64 ||
+            CRYPTO_memcmp(computed_hex, provided_hmac, 64) != 0) {
+            log_request(ip, tcp_ip, forwarded, real_ip, path, NULL, 401);
             send_status(client_fd, 401, "Unauthorized");
             return;
         }
     }
 
-    log_request(ip, tcp_ip, forwarded, real_ip, path, 200);
+    log_request(ip, tcp_ip, forwarded, real_ip, path, client_id, 200);
     send_status(client_fd, 200, ip);
 }
 
 int main(void) {
-    const char *api_key = getenv("API_KEY");
-    if (!api_key)
-        fprintf(stderr, "Warning: API_KEY not set, running without authentication\n");
+    const char *secret_key = getenv("SECRET_KEY");
+    if (!secret_key)
+        fprintf(stderr, "Warning: SECRET_KEY not set, running without authentication\n");
 
     struct sigaction sa = { .sa_handler = handle_signal };
     sigemptyset(&sa.sa_mask);
@@ -184,7 +215,7 @@ int main(void) {
         char client_ip[INET_ADDRSTRLEN];
         inet_ntop(AF_INET, &client_addr.sin_addr, client_ip, sizeof(client_ip));
 
-        handle_client(client_fd, client_ip, api_key);
+        handle_client(client_fd, client_ip, secret_key);
     }
 
     close(server_fd);

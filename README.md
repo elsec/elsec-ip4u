@@ -11,15 +11,24 @@ make
 ## Run
 
 ```sh
-API_KEY=your-secret-here ./server
+SECRET_KEY=your-master-secret ./server
 ```
 
-If `API_KEY` is unset the server starts without authentication (useful for local development).
+If `SECRET_KEY` is unset the server starts without authentication (useful for local development).
+
+## Issuing client keys
+
+```sh
+SECRET_KEY=your-master-secret ./keygen <client_id>
+# → alice:33201d28...
+```
+
+Give the output string to the client. They include it as-is in the `X-API-Key` header.
 
 ## Usage
 
 ```sh
-curl -H "X-API-Key: your-secret-here" http://your-server:8080/
+curl -H "X-API-Key: alice:33201d28..." http://your-server:8080/
 # → 203.0.113.42
 ```
 
@@ -40,7 +49,7 @@ proxy_set_header X-Real-IP $remote_addr;
 
 ## Authentication
 
-All requests must include the `X-API-Key` header matching the `API_KEY` environment variable. Requests without a valid key receive `401 Unauthorized`. Requests to any path other than `/` also receive `401 Unauthorized`.
+Client keys are HMAC-SHA256 derived from a master `SECRET_KEY`. The `X-API-Key` header format is `client_id:hmac_hex`. The server recomputes the HMAC for the given `client_id` and does a constant-time comparison. Requests without a valid key receive `401 Unauthorized`. Requests to any path other than `/` also receive `401 Unauthorized`.
 
 ## Logging
 
