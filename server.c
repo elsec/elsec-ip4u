@@ -128,7 +128,7 @@ static void handle_client(int client_fd, const char *tcp_ip, const char *secret_
     char key_buf[512] = {0};
     char *client_id = NULL;
     if (secret_key) {
-        const char *provided = find_header(buf, "X-API-Key");
+        const char *provided = find_header(buf, "X-Client-Key");
         if (provided)
             sscanf(provided, "%511[^\r\n]", key_buf);
 
