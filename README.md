@@ -76,7 +76,18 @@ Optional fields (`x_forwarded_for`, `x_real_ip`, `client_id`, `cf_country`) are 
 
 ```sh
 podman build -f Containerfile -t ip4u .
-podman run -e SECRET_KEY=your-master-secret -p 8080:8080 ip4u ./server --cloudflare
+
+# without Cloudflare
+podman run --env-file .env -p 8080:8080 ip4u
+
+# with Cloudflare
+podman run --env-file .env -p 8080:8080 ip4u ./server --cloudflare
+```
+
+Where `.env` contains:
+
+```
+SECRET_KEY=your-master-secret
 ```
 
 To issue a client key from the container:
