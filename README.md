@@ -44,7 +44,7 @@ All requests must include the `X-API-Key` header matching the `API_KEY` environm
 
 ## Logging
 
-Each request is logged to stderr as a JSON object:
+Each request is logged to stdout as a JSON object:
 
 ```json
 {"time":"2026-04-21T12:00:00Z","ip":"203.0.113.42","tcp_ip":"10.0.0.1","path":"/","x_forwarded_for":"203.0.113.42","status":200}

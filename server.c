@@ -31,7 +31,7 @@ static void log_request(const char *ip, const char *tcp_ip,
     if (xff) sscanf(xff, "%255[^\r\n]", xff_buf);
     if (xri) sscanf(xri, "%127[^\r\n]", xri_buf);
 
-    fprintf(stderr,
+    fprintf(stdout,
         "{\"time\":\"%s\",\"ip\":\"%s\",\"tcp_ip\":\"%s\""
         ",\"path\":\"%s\""
         "%s%s%s%s%s%s"
