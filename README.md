@@ -40,7 +40,7 @@ Pass `--cloudflare` to use Cloudflare headers for IP resolution and logging:
 SECRET_KEY=your-master-secret ./server --cloudflare
 ```
 
-In this mode `CF-Connecting-IP` is used as the highest-priority IP source, and `CF-IPCountry` is included in the log.
+In this mode `CF-Connecting-IP` is used as the highest-priority IP source, and `CF-IPCountry` is included in the log. See [Cloudflare's documentation](https://developers.cloudflare.com/fundamentals/reference/http-request-headers/) for details on these headers.
 
 ## Proxy headers
 
