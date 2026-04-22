@@ -182,6 +182,7 @@ static void handle_client(int client_fd, const char *tcp_ip,
 }
 
 int main(int argc, char *argv[]) {
+    setbuf(stdout, NULL);
     int cloudflare = 0;
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--cloudflare") == 0)
