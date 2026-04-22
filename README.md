@@ -76,26 +76,12 @@ Optional fields (`x_forwarded_for`, `x_real_ip`, `client_id`, `cf_country`) are 
 
 Examples use `podman` but `docker` works as a drop-in replacement for all commands.
 
-Build locally:
-
-```sh
-podman build -f Containerfile -t ip4u .
-```
-
-Or pull from the registry:
-
-```sh
-podman pull ghcr.io/elsec/elsec-ip4u:latest
-```
-
-Run (replace `ip4u` with `ghcr.io/elsec/elsec-ip4u:latest` if using the registry image):
-
 ```sh
 # without Cloudflare
-podman run --env-file .env -p 8080:8080 ip4u
+podman run --env-file .env -p 8080:8080 ghcr.io/elsec/elsec-ip4u:latest
 
 # with Cloudflare
-podman run --env-file .env -p 8080:8080 ip4u ./server --cloudflare
+podman run --env-file .env -p 8080:8080 ghcr.io/elsec/elsec-ip4u:latest ./server --cloudflare
 ```
 
 Where `.env` contains:
@@ -107,6 +93,12 @@ SECRET_KEY=your-master-secret
 To issue a client key from the container:
 
 ```sh
-podman run --rm -e SECRET_KEY=your-master-secret ip4u ./keygen alice
+podman run --rm -e SECRET_KEY=your-master-secret ghcr.io/elsec/elsec-ip4u:latest ./keygen alice
 # → alice:33201d28...
+```
+
+To build locally instead:
+
+```sh
+podman build -f Containerfile -t ip4u .
 ```
