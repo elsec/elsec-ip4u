@@ -34,33 +34,38 @@ static void json_escape(const char *src, char *dst, size_t dst_size) {
 
 static void log_request(const char *ip, const char *tcp_ip,
                         const char *xff, const char *xri,
-                        const char *path, const char *client_id, int status) {
+                        const char *path, const char *client_id,
+                        const char *cf_country, int status) {
     time_t now = time(NULL);
     char ts[32];
     strftime(ts, sizeof(ts), "%Y-%m-%dT%H:%M:%SZ", gmtime(&now));
 
-    char xff_raw[256] = "", xri_raw[128] = "";
+    char xff_raw[256] = "", xri_raw[128] = "", country_raw[8] = "";
     if (xff) sscanf(xff, "%255[^\r\n]", xff_raw);
     if (xri) sscanf(xri, "%127[^\r\n]", xri_raw);
+    if (cf_country) sscanf(cf_country, "%7[^\r\n]", country_raw);
 
-    char ip_e[256], tcp_e[256], path_e[2048], xff_e[512], xri_e[256], cid_e[256];
-    json_escape(ip,        ip_e,   sizeof(ip_e));
-    json_escape(tcp_ip,    tcp_e,  sizeof(tcp_e));
-    json_escape(path,      path_e, sizeof(path_e));
-    json_escape(xff_raw,   xff_e,  sizeof(xff_e));
-    json_escape(xri_raw,   xri_e,  sizeof(xri_e));
+    char ip_e[256], tcp_e[256], path_e[2048], xff_e[512], xri_e[256], cid_e[256], country_e[16];
+    json_escape(ip,          ip_e,      sizeof(ip_e));
+    json_escape(tcp_ip,      tcp_e,     sizeof(tcp_e));
+    json_escape(path,        path_e,    sizeof(path_e));
+    json_escape(xff_raw,     xff_e,     sizeof(xff_e));
+    json_escape(xri_raw,     xri_e,     sizeof(xri_e));
     json_escape(client_id ? client_id : "", cid_e, sizeof(cid_e));
+    json_escape(country_raw, country_e, sizeof(country_e));
 
     fprintf(stdout,
         "{\"time\":\"%s\",\"ip\":\"%s\",\"tcp_ip\":\"%s\""
         ",\"path\":\"%s\""
         "%s%s%s%s%s%s"
         "%s%s%s"
+        "%s%s%s"
         ",\"status\":%d}\n",
         ts, ip_e, tcp_e, path_e,
         xff ? ",\"x_forwarded_for\":\"" : "", xff ? xff_e : "", xff ? "\"" : "",
         xri ? ",\"x_real_ip\":\""       : "", xri ? xri_e : "", xri ? "\"" : "",
-        client_id ? ",\"client_id\":\"" : "", client_id ? cid_e : "", client_id ? "\"" : "",
+        client_id  ? ",\"client_id\":\""  : "", client_id  ? cid_e     : "", client_id  ? "\"" : "",
+        cf_country ? ",\"cf_country\":\"" : "", cf_country ? country_e : "", cf_country ? "\"" : "",
         status);
 }
 
@@ -92,7 +97,8 @@ static void send_status(int fd, int code, const char *text) {
     close(fd);
 }
 
-static void handle_client(int client_fd, const char *tcp_ip, const char *secret_key) {
+static void handle_client(int client_fd, const char *tcp_ip,
+                          const char *secret_key, int cloudflare) {
     char buf[BUFSIZE];
     ssize_t n = recv(client_fd, buf, sizeof(buf) - 1, 0);
     if (n <= 0) {
@@ -104,11 +110,15 @@ static void handle_client(int client_fd, const char *tcp_ip, const char *secret_
     char path[1024] = "-";
     sscanf(buf, "%*s %1023s", path);
 
-    const char *forwarded = find_header(buf, "X-Forwarded-For");
-    const char *real_ip   = find_header(buf, "X-Real-IP");
+    const char *cf_connecting_ip = cloudflare ? find_header(buf, "CF-Connecting-IP") : NULL;
+    const char *cf_country       = cloudflare ? find_header(buf, "CF-IPCountry")      : NULL;
+    const char *forwarded        = find_header(buf, "X-Forwarded-For");
+    const char *real_ip          = find_header(buf, "X-Real-IP");
 
     char ip[128];
-    if (forwarded) {
+    if (cf_connecting_ip) {
+        sscanf(cf_connecting_ip, "%127[^\r\n]", ip);
+    } else if (forwarded) {
         sscanf(forwarded, "%127[^,\r\n ]", ip);
     } else if (real_ip) {
         sscanf(real_ip, "%127[^\r\n]", ip);
@@ -120,7 +130,7 @@ static void handle_client(int client_fd, const char *tcp_ip, const char *secret_
     while (end > ip && (*end == ' ' || *end == '\t')) *end-- = '\0';
 
     if (strcmp(path, "/") != 0) {
-        log_request(ip, tcp_ip, forwarded, real_ip, path, NULL, 401);
+        log_request(ip, tcp_ip, forwarded, real_ip, path, NULL, cf_country, 401);
         send_status(client_fd, 401, "Unauthorized");
         return;
     }
@@ -134,7 +144,7 @@ static void handle_client(int client_fd, const char *tcp_ip, const char *secret_
 
         char *colon = strchr(key_buf, ':');
         if (!colon) {
-            log_request(ip, tcp_ip, forwarded, real_ip, path, NULL, 401);
+            log_request(ip, tcp_ip, forwarded, real_ip, path, NULL, cf_country, 401);
             send_status(client_fd, 401, "Unauthorized");
             return;
         }
@@ -156,20 +166,32 @@ static void handle_client(int client_fd, const char *tcp_ip, const char *secret_
 
         if (strlen(provided_hmac) != 64 ||
             CRYPTO_memcmp(computed_hex, provided_hmac, 64) != 0) {
-            log_request(ip, tcp_ip, forwarded, real_ip, path, NULL, 401);
+            log_request(ip, tcp_ip, forwarded, real_ip, path, NULL, cf_country, 401);
             send_status(client_fd, 401, "Unauthorized");
             return;
         }
     }
 
-    log_request(ip, tcp_ip, forwarded, real_ip, path, client_id, 200);
+    log_request(ip, tcp_ip, forwarded, real_ip, path, client_id, cf_country, 200);
     send_status(client_fd, 200, ip);
 }
 
-int main(void) {
+int main(int argc, char *argv[]) {
+    int cloudflare = 0;
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--cloudflare") == 0)
+            cloudflare = 1;
+        else {
+            fprintf(stderr, "Unknown option: %s\n", argv[i]);
+            return 1;
+        }
+    }
+
     const char *secret_key = getenv("SECRET_KEY");
     if (!secret_key)
         fprintf(stderr, "Warning: SECRET_KEY not set, running without authentication\n");
+    if (cloudflare)
+        fprintf(stderr, "Cloudflare mode enabled: using CF-Connecting-IP\n");
 
     struct sigaction sa = { .sa_handler = handle_signal };
     sigemptyset(&sa.sa_mask);
@@ -215,7 +237,7 @@ int main(void) {
         char client_ip[INET_ADDRSTRLEN];
         inet_ntop(AF_INET, &client_addr.sin_addr, client_ip, sizeof(client_ip));
 
-        handle_client(client_fd, client_ip, secret_key);
+        handle_client(client_fd, client_ip, secret_key, cloudflare);
     }
 
     close(server_fd);
