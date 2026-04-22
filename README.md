@@ -74,9 +74,21 @@ Optional fields (`x_forwarded_for`, `x_real_ip`, `client_id`, `cf_country`) are 
 
 ## Container
 
+Build locally:
+
 ```sh
 podman build -f Containerfile -t ip4u .
+```
 
+Or pull from the registry:
+
+```sh
+podman pull ghcr.io/elsec/elsec-ip4u:latest
+```
+
+Run (replace `ip4u` with `ghcr.io/elsec/elsec-ip4u:latest` if using the registry image):
+
+```sh
 # without Cloudflare
 podman run --env-file .env -p 8080:8080 ip4u
 
