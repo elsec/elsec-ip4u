@@ -74,6 +74,8 @@ Optional fields (`x_forwarded_for`, `x_real_ip`, `client_id`, `cf_country`) are 
 
 ## Container
 
+Examples use `podman` but `docker` works as a drop-in replacement for all commands.
+
 Build locally:
 
 ```sh
