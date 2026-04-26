@@ -96,8 +96,8 @@ static void send_status(int fd, int code, const char *text) {
         "Content-Length: %zu\r\n"
         "Connection: close\r\n"
         "\r\n"
-        "%s\n",
-        code, text, strlen(text) + 1, text);
+        "%s",
+        code, text, strlen(text), text);
     send(fd, buf, len, 0);
     close(fd);
 }
